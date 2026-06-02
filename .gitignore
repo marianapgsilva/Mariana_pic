@@ -1,0 +1,17 @@
+# Ambiente Virtual Python
+venv/
+.venv/
+env/
+
+# Modelos treinados e scalers (Ficheiros pesados)
+models/*.keras
+models/*.pkl
+
+# Caches e ficheiros do sistema Apple
+__pycache__/
+*.py[cod]
+.DS_Store
+
+# Ficheiros do Jupyter/Spyder
+.ipynb_checkpoints/
+.spyproject/

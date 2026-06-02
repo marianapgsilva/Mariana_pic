@@ -1,0 +1,2530 @@
+TRANSCRICAO DA CONVERSA - 2026-05-07
+====================================
+
+Nota: este ficheiro reconstroi a conversa em formato texto, praticamente
+ipsis verbis, mantendo perguntas, explicacoes, comandos, codigo e decisoes
+tecnicas principais. Foram omitidos apenas detalhes internos de execucao das
+ferramentas quando nao eram parte da conversa visivel.
+
+
+UTILIZADOR:
+Como correr o script interface.py?
+
+CODEX:
+Vou verificar rapidamente a estrutura do projeto e o proprio `Interface.py`
+para te dar o comando certo em vez de adivinhar o ambiente.
+
+Ja vi que isto e uma app Streamlit, nao um script Python "normal". Vou
+confirmar dependencias/modelos para te dizer tambem o que fazer se ele falhar
+por falta de ficheiros treinados.
+
+O `Interface.py` e uma app **Streamlit**, por isso corres assim a partir da
+raiz do projeto:
+
+```powershell
+cd C:\Users\raque\Documents\GitHub\bariatric-weight-prediction
+conda activate bariatric
+streamlit run previsao_peso_2026\Scripts\Interface.py
+```
+
+Depois abre no browser, normalmente em:
+
+```text
+http://localhost:8501
+```
+
+Se aparecer erro tipo `streamlit nao e reconhecido` ou `No module named
+streamlit`, instala as dependencias que faltam:
+
+```powershell
+pip install streamlit tensorflow
+```
+
+O resto parece estar no sitio certo: os modelos `.keras` e os scalers `.pkl`
+ja existem em `previsao_peso_2026\models`, por isso a interface deve conseguir
+gerar previsoes sem precisares de treinar primeiro.
+
+
+UTILIZADOR:
+O que e uma app Streamlit?
+
+CODEX:
+Uma app **Streamlit** e uma aplicacao web feita em Python, normalmente usada
+para criar interfaces rapidas para modelos de dados, machine learning, graficos
+e dashboards.
+
+No teu caso, o ficheiro `Interface.py` usa esta linha:
+
+```python
+import streamlit as st
+```
+
+Isso significa que ele nao e para correr como um script normal com:
+
+```powershell
+python Interface.py
+```
+
+Mas sim com:
+
+```powershell
+streamlit run previsao_peso_2026\Scripts\Interface.py
+```
+
+O Streamlit pega no teu codigo Python e transforma-o numa pagina interativa no
+browser. Por exemplo, no teu `Interface.py`, estas linhas criam elementos
+visuais:
+
+```python
+st.title("BariCurve...")
+st.sidebar.slider("Idade (anos)", 18, 75, 40)
+st.button("Gerar Projecao Clinica")
+st.pyplot(fig)
+```
+
+Ou seja: em vez de escreveres uma interface web em HTML/CSS/JavaScript,
+escreves quase tudo em Python, e o Streamlit gera a pagina por ti. E muito
+usado para prototipos clinicos, dashboards e demonstracoes de modelos de
+previsao.
+
+
+UTILIZADOR:
+Faz um comment a dizer:
+
+CODEX:
+Claro. Que texto queres que o comentario diga, e em que parte do `Interface.py`
+queres que eu o coloque?
+
+
+UTILIZADOR:
+Explica-me este codigo:
+
+```python
+# LOGICA DE PREVISAO (Autoregressao LSTM)
+# ============================================================
+if st.button("Gerar Projecao Clinica", type="primary"):
+    historico_imcs = [imc_0]
+    if imc_3m_real:
+        historico_imcs.append(imc_3m_real)
+        
+    resultados = {0: imc_0}
+    marcos = ["3m", "6m", "12m", "24m", "36m", "48m"]
+    MARCOS_NOMES = ["0", "3m", "6m", "12m", "24m", "36m", "48m"]
+    meses_num = [0, 3, 6, 12, 24, 36, 48]
+
+    with st.spinner("A processar trajetorias neuronais..."):
+        try:
+            # Desliga a GPU para previsoes de um unico doente (muito mais rapido no Mac)
+            tf.config.set_visible_devices([], 'GPU')
+        except:
+            pass
+
+        try:
+            for m in marcos:
+                idx_marco = MARCOS_NOMES.index(m)
+                timesteps = idx_marco
+                
+                # Carregar o modelo e os scalers especificos daquele marco
+                caminho_modelo = os.path.join(PASTA_MODELS, f"modelo_lstm_{m}.keras")
+                if not os.path.exists(caminho_modelo):
+                    raise FileNotFoundError(f"Falta o modelo {m}. Corres-te o LSTM_Curva.py?")
+
+                modelo = load_model(caminho_modelo, compile=False)
+                sc_x = joblib.load(os.path.join(PASTA_MODELS, f"scaler_x_{m}.pkl"))
+                sc_y = joblib.load(os.path.join(PASTA_MODELS, f"scaler_y_{m}.pkl"))
+
+                # Preencher historico em falta para o marco atual
+                while len(historico_imcs) < timesteps:
+                    historico_imcs.append(historico_imcs[-1])
+                    
+                dados_planos = [genero_num, idade, dislipidemia]
+                dados_planos.extend(historico_imcs[:timesteps])
+                
+                input_data = np.array([dados_planos])
+                input_sc = sc_x.transform(input_data)
+                
+                # Reshape para o formato da LSTM: (Doentes, Timesteps, Variaveis)
+                reshaped = np.zeros((1, timesteps, 4)) # 3 variaveis estaticas + 1 IMC
+                for t in range(timesteps):
+                    reshaped[0, t, :3] = input_sc[0, :3]
+                    reshaped[0, t, -1] = input_sc[0, 3 + t]
+                
+                # Prever
+                pred_sc = modelo.predict(reshaped, verbose=0)
+                pred_final = float(sc_y.inverse_transform(pred_sc)[0][0])
+                
+                mes_atual = int(m.replace('m', ''))
+                
+                # Substituir pela realidade se tivermos o dado de 3 meses
+                if mes_atual == 3 and imc_3m_real:
+                    pred_final = imc_3m_real
+                
+                resultados[mes_atual] = pred_final
+                
+                # Alimentar a previsao atual para servir de base ao proximo mes
+                if len(historico_imcs) <= idx_marco:
+                    historico_imcs.append(pred_final)
+
+                # Limpar a memoria grafica do TensorFlow
+                tf.keras.backend.clear_session()
+```
+
+CODEX:
+Este bloco e a parte que faz a **previsao da evolucao do IMC ao longo do
+tempo** usando varios modelos LSTM, um para cada marco temporal: 3 meses, 6
+meses, 12 meses, 24 meses, 36 meses e 48 meses.
+
+A ideia geral e: o utilizador introduz dados iniciais do doente, carrega no
+botao, e o programa vai prevendo o IMC mes a mes. Cada previsao alimenta a
+previsao seguinte.
+
+**O que acontece passo a passo**
+
+Quando o utilizador clica no botao:
+
+```python
+if st.button("Gerar Projecao Clinica", type="primary"):
+```
+
+o Streamlit executa este bloco. Antes disso, nada desta logica corre.
+
+Depois e criado o historico inicial de IMCs:
+
+```python
+historico_imcs = [imc_0]
+```
+
+Ou seja, comeca com o IMC inicial. Se o utilizador tambem introduziu o IMC
+real aos 3 meses, esse valor e acrescentado:
+
+```python
+if imc_3m_real:
+    historico_imcs.append(imc_3m_real)
+```
+
+Depois sao preparadas algumas estruturas:
+
+```python
+resultados = {0: imc_0}
+marcos = ["3m", "6m", "12m", "24m", "36m", "48m"]
+MARCOS_NOMES = ["0", "3m", "6m", "12m", "24m", "36m", "48m"]
+meses_num = [0, 3, 6, 12, 24, 36, 48]
+```
+
+`resultados` guarda as previsoes finais, comecando pelo mes 0.
+`marcos` sao os tempos para os quais ha modelos treinados.
+`MARCOS_NOMES` serve para descobrir quantos passos temporais a LSTM deve
+receber.
+`meses_num` e usado depois para desenhar o grafico.
+
+Esta parte mostra uma mensagem de carregamento enquanto o modelo calcula:
+
+```python
+with st.spinner("A processar trajetorias neuronais..."):
+```
+
+A seguir, o codigo tenta desligar a GPU:
+
+```python
+try:
+    tf.config.set_visible_devices([], 'GPU')
+except:
+    pass
+```
+
+Isto e uma otimizacao. Para prever apenas um doente, usar GPU pode ser
+desnecessario ou ate mais lento. Se der erro, o programa ignora e continua.
+
+Depois comeca o ciclo principal:
+
+```python
+for m in marcos:
+```
+
+Aqui o codigo passa por cada marco temporal: primeiro 3 meses, depois 6, depois
+12, e assim por diante.
+
+Para cada marco, descobre a posicao desse marco:
+
+```python
+idx_marco = MARCOS_NOMES.index(m)
+timesteps = idx_marco
+```
+
+Por exemplo:
+
+```text
+3m  -> idx_marco = 1
+6m  -> idx_marco = 2
+12m -> idx_marco = 3
+```
+
+Isto significa que, para prever os 12 meses, o modelo espera receber uma
+sequencia com 3 momentos anteriores: 0, 3m e 6m.
+
+Depois carrega o modelo especifico daquele marco:
+
+```python
+caminho_modelo = os.path.join(PASTA_MODELS, f"modelo_lstm_{m}.keras")
+```
+
+Se estiver a prever `6m`, ele procura:
+
+```text
+modelo_lstm_6m.keras
+```
+
+Se o ficheiro nao existir, mostra erro:
+
+```python
+if not os.path.exists(caminho_modelo):
+    raise FileNotFoundError(f"Falta o modelo {m}. Corres-te o LSTM_Curva.py?")
+```
+
+Depois carrega o modelo e os scalers:
+
+```python
+modelo = load_model(caminho_modelo, compile=False)
+sc_x = joblib.load(os.path.join(PASTA_MODELS, f"scaler_x_{m}.pkl"))
+sc_y = joblib.load(os.path.join(PASTA_MODELS, f"scaler_y_{m}.pkl"))
+```
+
+`modelo` e a rede neuronal treinada.
+`sc_x` normaliza os dados de entrada.
+`sc_y` transforma a previsao de volta para a escala real do IMC.
+
+Esta parte garante que ha IMCs suficientes no historico:
+
+```python
+while len(historico_imcs) < timesteps:
+    historico_imcs.append(historico_imcs[-1])
+```
+
+Se faltar algum valor anterior, repete o ultimo IMC conhecido. E uma forma
+simples de preencher lacunas.
+
+Depois constroi os dados de entrada:
+
+```python
+dados_planos = [genero_num, idade, dislipidemia]
+dados_planos.extend(historico_imcs[:timesteps])
+```
+
+Ou seja, junta:
+
+```text
+genero, idade, dislipidemia, IMCs anteriores
+```
+
+Exemplo para prever 12 meses:
+
+```text
+[genero, idade, dislipidemia, IMC_0, IMC_3m, IMC_6m]
+```
+
+A seguir transforma estes dados num array NumPy e aplica o scaler:
+
+```python
+input_data = np.array([dados_planos])
+input_sc = sc_x.transform(input_data)
+```
+
+A LSTM nao recebe os dados numa tabela simples. Ela espera uma estrutura 3D:
+
+```python
+reshaped = np.zeros((1, timesteps, 4))
+```
+
+Este formato significa:
+
+```text
+1 doente, N momentos temporais, 4 variaveis por momento
+```
+
+As 4 variaveis sao:
+
+```text
+genero, idade, dislipidemia, IMC nesse momento
+```
+
+Depois o codigo preenche essa estrutura:
+
+```python
+for t in range(timesteps):
+    reshaped[0, t, :3] = input_sc[0, :3]
+    reshaped[0, t, -1] = input_sc[0, 3 + t]
+```
+
+Em cada momento temporal, repete as variaveis fixas do doente:
+
+```text
+genero, idade, dislipidemia
+```
+
+e coloca o IMC correspondente desse momento.
+
+Depois faz a previsao:
+
+```python
+pred_sc = modelo.predict(reshaped, verbose=0)
+```
+
+A previsao ainda vem normalizada, por isso e convertida para IMC real:
+
+```python
+pred_final = float(sc_y.inverse_transform(pred_sc)[0][0])
+```
+
+Depois converte `"3m"` em `3`, `"12m"` em `12`, etc.:
+
+```python
+mes_atual = int(m.replace('m', ''))
+```
+
+Se o utilizador introduziu o valor real aos 3 meses, o codigo usa esse valor em
+vez da previsao:
+
+```python
+if mes_atual == 3 and imc_3m_real:
+    pred_final = imc_3m_real
+```
+
+Isto faz sentido: se ha um dado real, ele e mais fiavel do que uma previsao.
+
+Depois guarda o resultado:
+
+```python
+resultados[mes_atual] = pred_final
+```
+
+E adiciona essa previsao ao historico:
+
+```python
+if len(historico_imcs) <= idx_marco:
+    historico_imcs.append(pred_final)
+```
+
+Isto e a parte de **autoregressao**. Significa que a previsao de um mes e usada
+como entrada para prever os meses seguintes.
+
+Por exemplo:
+
+```text
+IMC inicial -> preve 3m
+IMC inicial + IMC 3m -> preve 6m
+IMC inicial + IMC 3m + IMC 6m -> preve 12m
+...
+```
+
+Finalmente, limpa a sessao do TensorFlow:
+
+```python
+tf.keras.backend.clear_session()
+```
+
+Isto ajuda a libertar memoria depois de usar cada modelo.
+
+Resumindo: este codigo carrega varios modelos LSTM, um por intervalo temporal,
+e constroi uma trajetoria prevista do IMC do doente ate aos 48 meses. A cada
+passo, usa os dados demograficos, os IMCs anteriores e as previsoes ja feitas
+para calcular o proximo ponto da curva.
+
+
+UTILIZADOR:
+Consegues encontrar em todas as pastas os comments que foram adicionados a 2
+de maio?
+
+CODEX:
+Vou procurar isso pelo historico do Git, porque a data "2 de maio" nao fica
+guardada nos ficheiros em si, mas sim nos commits/diffs. Vou filtrar os commits
+desse dia e depois procurar linhas de comentario adicionadas.
+
+Encontrei dois commits nesse dia: um as `20:47:56 UTC` e outro as
+`23:02:37 +0100`. Agora vou extrair so as linhas adicionadas que parecem
+comentarios, com o ficheiro correspondente.
+
+Parece que os comentarios adicionados nesse dia ficaram concentrados em
+`MAE_modelos.py`; o outro commit so moveu ficheiros, sem alterar conteudo. Vou
+verificar onde esse ficheiro esta agora, para te dar o caminho atual.
+
+Curioso: esses comentarios existiram no commit de 2 de maio, mas ja nao
+aparecem no ficheiro atual. Vou so identificar em que ficheiro/caminho do
+historico foram adicionados e se depois foram removidos, para nao te dar uma
+pista falsa.
+
+Sim. Procurei no historico Git em todas as pastas para o dia **2 de maio de
+2026**.
+
+Foram encontrados **2 commits** nesse dia:
+
+```text
+6c0d135 - 2026-05-02 20:47:56 +0000 - Move 2026 weight prediction scripts
+bf6007d - 2026-05-02 23:02:37 +0100 - sugestoes para o trabalho
+```
+
+O commit `6c0d135` apenas moveu ficheiros, sem adicionar comentarios novos.
+
+Os comentarios adicionados estao no commit `bf6007d`, no ficheiro que na altura
+estava em:
+
+```text
+previsao_peso_2026/MAE_modelos.py
+```
+
+Agora o ficheiro equivalente esta em:
+
+`previsao_peso_2026/Analise/MAE_modelos.py`
+
+Mas atencao: esses comentarios **ja nao estao no ficheiro atual**. Foram
+removidos/substituidos no commit de **4 de maio de 2026**:
+
+```text
+c9daa14 - 2026-05-04 03:37:30 +0100 - Codigo organizado
+```
+
+Os comentarios adicionados a 2 de maio eram sobre:
+
+1. **Usar IMC em vez de peso bruto**
+
+```python
+# Preferimos usar IMC em vez de peso bruto para modelar a perda ponderal.
+# A perda de 20 kg nao tem o mesmo significado clinico numa pessoa de 1,40 m
+# e numa pessoa de 2,00 m...
+```
+
+2. **Criar variaveis derivadas entre IMC inicial e IMC aos 3 meses**
+
+```python
+# Se houver datas reais das medicoes, o ideal e criar tambem:
+#   - dias_imc_3m = data_medicao_3m - data_cirurgia;
+#   - var_imc_0_3m = imc_0 - imc_3m;
+#   - perc_var_imc_0_3m = var_imc_0_3m / imc_0;
+#   - velocidade_var_imc_0_3m = var_imc_0_3m / dias_imc_3m.
+```
+
+3. **Usar logaritmo da variacao proporcional do IMC**
+
+```python
+# Tambem pode fazer sentido usar uma variavel com logaritmo para representar
+# a variacao proporcional do IMC:
+#   - log_var_imc_0_3m = log(imc_3m / imc_0)
+#   - log_perda_imc_0_3m = log(imc_0 / imc_3m)
+```
+
+4. **Justificacao para testar Dislipidemia isoladamente**
+
+```python
+# A Dislipidemia foi testada isoladamente porque, na analise SHAP, apareceu
+# como a comorbilidade com maior relevancia relativa para as previsoes?
+```
+
+5. **Ideia de evolucao do projeto: modelo estatico vs dinamico**
+
+```python
+# Ideia para evolucao do projeto:
+#   1) Modelo estatico: prever a curva completa dos 5 anos...
+#   2) Modelo dinamico: atualizar a previsao quando aparecem medicoes reais...
+```
+
+6. **Sugestao sobre guardar a base de dados no repositorio**
+
+```python
+# Sugestao: se for possivel partilhar a base de dados, colocar o ficheiro CSV
+# diretamente no repositorio...
+```
+
+Portanto: sim, encontrei-os. Estavam todos em `MAE_modelos.py`, adicionados a
+**2 de maio**, e depois desapareceram na reorganizacao de **4 de maio**.
+
+
+UTILIZADOR:
+Ele usou os dias ("a. - dias_imc_3m = data_medicao_3m - data_cirurgia )"
+nalguma das partes do modelo?
+
+CODEX:
+Vou procurar por essas variaveis de datas/dias em todo o projeto e, se nao
+aparecerem literalmente, vou verificar tambem os scripts principais do modelo
+para ver se calculam algo equivalente.
+
+A primeira pesquisa mostrou que a base de dados tem colunas de "Numero de
+Dias...", incluindo 3 meses, mas nos scripts Python principais so vi o uso dos
+IMCs e variaveis clinicas. Vou fazer uma segunda pesquisa so nos `.py` para
+confirmar sem ruido dos ficheiros estaticos/CSV.
+
+Confirmado: nao ha nenhuma referencia em scripts Python a `dias_imc_3m`, datas
+de medicao, ou colunas "Numero de Dias...". So falta ver o ficheiro de
+comparacao de performance, porque tambem parece treinar modelos e pode ter
+outra lista de features.
+
+Nao. Pelo codigo atual, ele **nao usou os dias** do tipo:
+
+```python
+dias_imc_3m = data_medicao_3m - data_cirurgia
+```
+
+nem usou as colunas ja existentes na base como:
+
+```text
+Numero de Dias_3meses desde Cirurgia (D0)
+Numero de Dias_6meses desde Cirurgia (D0)
+Numero de Dias_1ano desde Cirurgia (D0)
+...
+```
+
+Essas colunas existem no CSV, mas os modelos ignoram-nas.
+
+Nos scripts, as features usadas sao essencialmente:
+
+```python
+genero_num
+idade
+dislipidemia
+imc_0
+imc_3m
+imc_6m
+imc_12m
+...
+```
+
+Por exemplo, no LSTM:
+
+```python
+feature_cols = ['genero_num', 'idade', 'dislipidemia'] + [f"imc_{m}" for m in marcos_input]
+```
+
+E na comparacao de modelos:
+
+```python
+feat_marco = ['genero_num', 'idade', 'dislipidemia', 'imc_0', 'imc_3m', ...]
+```
+
+Ou seja, ele usa o **valor do IMC em cada marco temporal**, mas nao usa o numero
+real de dias em que esse IMC foi medido.
+
+Aquele comentario de 2 de maio era uma **sugestao de melhoria**, nao algo
+implementado. A ideia seria util porque "3 meses" nem sempre sao exatamente 90
+dias; na tua base ha valores como 74, 90, 102, 125 dias, etc. Incorporar esses
+dias podia ajudar o modelo a distinguir uma perda aos 74 dias de uma perda aos
+125 dias.
+
+
+UTILIZADOR:
+Como e que podemos usar a variavel dias desde a cirurgia como variavel de
+input. Ou seja como escrever o codigo de forma a associar a cada medicao de IMC
+(calculado a partir do peso e da altura do doente) a um x dia apos cirurgia.
+Ou seja Em vez de entrar com o input IMC aos 3 meses foi 40, entrar antes com
+uma variavel que seja que o imc foi 40 para o D90 (ou seja, aos 90 dias o IMC
+correspondente ao peso medido foi de 40. Isto permite evitar o grande problema
+de termos medicoes que nos metiamos na coluna dos 3 meses, mas que na realizade
+nao eram exactamente 90 dias apos a cirurgia, eram por exemplo 75 dias apos a
+cirurgia.
+
+CODEX:
+Vou responder pensando no teu codigo atual: hoje ele trata "3m", "6m", "12m"
+como tempos fixos, mas a base ja tem colunas com os dias reais desde a
+cirurgia. A mudanca mais limpa e passar a alimentar a LSTM com pares `(dia,
+IMC)`, nao apenas com `IMC`.
+
+Sim, e essa e provavelmente uma melhoria muito boa para o teu modelo.
+
+A ideia e: em vez de a LSTM receber so isto:
+
+```text
+imc_0, imc_3m, imc_6m, ...
+```
+
+passa a receber pares:
+
+```text
+dia_0, imc_0
+dia_3m, imc_3m
+dia_6m, imc_6m
+...
+```
+
+Ou seja, uma medicao deixa de ser "IMC aos 3 meses" e passa a ser:
+
+```text
+No D75, o IMC era 40
+No D202, o IMC era 32
+No D563, o IMC era 30
+```
+
+Assim o modelo aprende a curva em funcao do **tempo real desde a cirurgia**,
+nao em funcao de colunas aproximadas.
+
+**Como Representar**
+
+No `LSTM_Curva.py`, primeiro mapeavamos as colunas dos dias:
+
+```python
+DIAS_NOMINAIS = {
+    "0": 0,
+    "3m": 90,
+    "6m": 180,
+    "12m": 365,
+    "24m": 730,
+    "36m": 1095,
+    "48m": 1460,
+}
+
+rename = {
+    'IMC_kg/m2': 'imc_0',
+    'IMC_3_mes': 'imc_3m',
+    'IMC_6_mes': 'imc_6m',
+    'IMC_12_mes': 'imc_12m',
+    'IMC_24_mes': 'imc_24m',
+    'IMC_36_mes': 'imc_36m',
+    'IMC_48_mes': 'imc_48m',
+
+    'Numero de Dias_3meses desde Cirurgia (D0)': 'dia_3m',
+    'Numero de Dias_6meses desde Cirurgia (D0)': 'dia_6m',
+    'Numero de Dias_1ano desde Cirurgia (D0)': 'dia_12m',
+    'Numero de Dias_2anos desde Cirurgia (D0)': 'dia_24m',
+    'Numero de Dias_3anos desde Cirurgia (D0)': 'dia_36m',
+    'Numero de Dias_4anos desde Cirurgia (D0)': 'dia_48m',
+
+    'Idade_anos (a data cirurgia)': 'idade',
+    'Genero': 'genero',
+    'Dislipidemia': 'dislipidemia',
+}
+```
+
+Depois, dentro de `carregar_dados()`:
+
+```python
+df = df.rename(columns=rename, errors='ignore')
+
+df['dia_0'] = 0
+
+for m in ["3m", "6m", "12m", "24m", "36m", "48m"]:
+    df[f"dia_{m}"] = pd.to_numeric(df[f"dia_{m}"], errors="coerce")
+    df[f"dia_{m}"] = df[f"dia_{m}"].fillna(DIAS_NOMINAIS[m])
+```
+
+Depois, no treino da LSTM, em vez de usar so os IMCs anteriores:
+
+```python
+feature_cols = ['genero_num', 'idade', 'dislipidemia'] + [f"imc_{m}" for m in marcos_input]
+```
+
+passarias a usar, para cada medicao anterior:
+
+```python
+dia_da_medicao
+imc_da_medicao
+dias_ate_ao_alvo
+```
+
+Por exemplo:
+
+```python
+feature_cols = ['genero_num', 'idade', 'dislipidemia']
+
+for m in marcos_input:
+    delta_col = f"delta_{m}_ate_{marco_target}"
+    df_modelo[delta_col] = df_modelo[f"dia_{marco_target}"] - df_modelo[f"dia_{m}"]
+
+    feature_cols.extend([
+        f"dia_{m}",
+        f"imc_{m}",
+        delta_col,
+    ])
+```
+
+Assim, para prever o IMC aos 6 meses, o modelo pode receber algo como:
+
+```text
+genero, idade, dislipidemia,
+D0,  IMC 45, dias ate alvo = 180
+D75, IMC 40, dias ate alvo = 105
+```
+
+Isto e muito mais informativo do que fingir que o IMC 40 foi medido exatamente
+aos 90 dias.
+
+**Reshape Da LSTM**
+
+Como agora cada timestep tem mais informacao, o `reshape_lstm()` tambem muda.
+
+Antes cada timestep tinha:
+
+```text
+genero, idade, dislipidemia, imc
+```
+
+Agora pode ter:
+
+```text
+genero, idade, dislipidemia, dia_medido, imc_medido, dias_ate_alvo
+```
+
+Codigo:
+
+```python
+static_count = 3
+step_feature_count = 3  # dia, imc, delta_dias
+timesteps = len(marcos_input)
+
+def reshape_lstm(data):
+    reshaped = np.zeros((data.shape[0], timesteps, static_count + step_feature_count))
+
+    for t in range(timesteps):
+        start = static_count + t * step_feature_count
+        end = start + step_feature_count
+
+        reshaped[:, t, :static_count] = data[:, :static_count]
+        reshaped[:, t, static_count:] = data[:, start:end]
+
+    return reshaped
+```
+
+**Na Interface**
+
+Na app Streamlit, em vez de perguntares so:
+
+```text
+IMC aos 3 meses
+```
+
+perguntarias:
+
+```text
+Dia da medicao
+IMC nesse dia
+```
+
+Por exemplo:
+
+```python
+usa_medicao = st.checkbox("Inserir medicao real pos-operatoria?")
+
+if usa_medicao:
+    dia_real = st.number_input("Dia apos cirurgia", min_value=1, max_value=2000, value=90)
+    imc_real = st.number_input("IMC nesse dia", min_value=20.0, max_value=70.0, value=40.0)
+```
+
+E o historico passava de:
+
+```python
+historico_imcs = [imc_0]
+```
+
+para:
+
+```python
+historico_medicoes = [{"dia": 0, "imc": imc_0}]
+
+if usa_medicao:
+    historico_medicoes.append({"dia": dia_real, "imc": imc_real})
+```
+
+Depois, para prever um alvo, por exemplo D180:
+
+```python
+dia_alvo = 180
+
+dados_planos = [genero_num, idade, dislipidemia]
+
+for medicao in historico_medicoes:
+    dados_planos.extend([
+        medicao["dia"],
+        medicao["imc"],
+        dia_alvo - medicao["dia"],
+    ])
+```
+
+Ponto importante: depois desta mudanca, e preciso **retreinar os modelos**,
+porque os ficheiros atuais `.keras` e `scaler_x_*.pkl` foram treinados com
+outro formato de input. O `Interface.py` tambem tem de usar exatamente a mesma
+ordem de variaveis que o `LSTM_Curva.py` usou no treino.
+
+
+UTILIZADOR:
+"...perguntarias:
+
+Dia da medicao
+IMC nesse dia..." - aqui o dia da medicao nao e sempre 0?
+
+CODEX:
+Nao. O **dia da cirurgia** e que e sempre `D0`.
+
+O **dia da medicao** depende de quando o doente foi pesado/avaliado.
+
+Por exemplo:
+
+```text
+Cirurgia: D0
+Primeira medicao pos-operatoria: D75
+Segunda medicao: D202
+Terceira medicao: D563
+```
+
+Entao teriamos:
+
+```text
+D0   -> IMC inicial, por exemplo 45
+D75  -> IMC 40
+D202 -> IMC 35
+D563 -> IMC 32
+```
+
+Ou seja, quando eu disse "Dia da medicao", queria dizer:
+
+```text
+quantos dias depois da cirurgia aquela medicao aconteceu
+```
+
+No teu CSV isso ja existe em colunas como:
+
+```text
+Numero de Dias_3meses desde Cirurgia (D0)
+Numero de Dias_6meses desde Cirurgia (D0)
+Numero de Dias_1ano desde Cirurgia (D0)
+...
+```
+
+Portanto:
+
+```text
+IMC inicial no dia da cirurgia -> dia = 0
+IMC aos "3 meses" -> pode ser dia = 75, 90, 102, 125...
+IMC aos "6 meses" -> pode ser dia = 160, 180, 202...
+```
+
+A mudanca seria deixar de dizer ao modelo apenas:
+
+```text
+IMC_3m = 40
+```
+
+e passar a dizer:
+
+```text
+No dia 75 apos cirurgia, o IMC era 40
+```
+
+Assim o modelo percebe que aquele valor nao foi exatamente aos 90 dias.
+
+
+UTILIZADOR:
+Explica-me o codigo desde aqui "Como Representar"; Da um exemplo concreto de
+como ficava codificado 5 linhas da base de dados., e como vai passar a ficar
+codificado em todas as alteracoes do codigo que fizeste.
+
+CODEX:
+Vou buscar 5 linhas reais da tua base com as colunas de IMC e "Numero de
+Dias...", para o exemplo ficar aterrado no teu dataset e nao numa tabela
+inventada.
+
+A primeira leitura mostrou os IMCs, mas os nomes das colunas com acentos vieram
+desencontrados no terminal. Vou inspecionar o cabecalho do CSV e selecionar as
+colunas pelo texto real que esta no ficheiro.
+
+Tambem vou apanhar a `Dislipidemia`, porque ela entra nas features atuais do
+LSTM junto com genero e idade.
+
+Sim. Antes de tudo, uma nota: eu **ainda nao alterei os ficheiros**. O que te
+mostrei foi a proposta de como o codigo passaria a ficar. Vou explicar a partir
+do "Como Representar" com um exemplo real da tua base.
+
+**Ideia Principal**
+
+Hoje, para prever 12 meses, o modelo ve algo deste genero:
+
+```text
+genero, idade, dislipidemia, imc_0, imc_3m, imc_6m -> prever imc_12m
+```
+
+O problema e que `imc_3m` pode ter sido medido no D59, D74, D90 ou D125. O
+modelo nao sabe isso.
+
+Com a alteracao, o modelo passaria a ver:
+
+```text
+genero, idade, dislipidemia,
+dia_0,  imc_0,  dias_ate_alvo,
+dia_3m, imc_3m, dias_ate_alvo,
+dia_6m, imc_6m, dias_ate_alvo
+-> prever imc_12m
+```
+
+Ou seja, cada medicao passa a ser um par temporal:
+
+```text
+No dia X depois da cirurgia, o IMC era Y.
+```
+
+**Exemplo Real**
+
+Pegando nas primeiras 5 linhas da tua base:
+
+```text
+id   genero idade dislipidemia imc_0     dia_3m imc_3m    dia_6m imc_6m    dia_12m imc_12m
+4    F      35    0            50.5651   74     40.5265   202    32.3468   563     32.8673
+5    F      51    1            45.6114   90     34.3935   174    29.4625   382     28.3531
+6    M      42    0            42.7719   59     34.6005   207    28.4720   398     25.8866
+7    F      49    0            48.2234   59     41.0092   172    37.3442   388     34.1808
+10   F      41    0            57.5178   97     47.9253   230    37.8495   525     30.3763
+```
+
+Antes, para prever o `imc_12m`, isto ficava codificado assim:
+
+```text
+id   genero_num idade dislipidemia imc_0    imc_3m   imc_6m   alvo
+4    0          35    0            50.5651  40.5265  32.3468  32.8673
+5    0          51    1            45.6114  34.3935  29.4625  28.3531
+6    1          42    0            42.7719  34.6005  28.4720  25.8866
+7    0          49    0            48.2234  41.0092  37.3442  34.1808
+10   0          41    0            57.5178  47.9253  37.8495  30.3763
+```
+
+Aqui o modelo nao sabe que, por exemplo, no doente `4`, o suposto "3 meses" foi
+no **D74**, e o "12 meses" foi no **D563**.
+
+Depois da alteracao, para prever `imc_12m`, ficaria assim:
+
+```text
+id genero idade dislip dia_0 imc_0   delta_0_12m dia_3m imc_3m  delta_3m_12m dia_6m imc_6m  delta_6m_12m alvo
+4  0      35    0      0     50.5651 563         74     40.5265 489          202    32.3468 361          32.8673
+5  0      51    1      0     45.6114 382         90     34.3935 292          174    29.4625 208          28.3531
+6  1      42    0      0     42.7719 398         59     34.6005 339          207    28.4720 191          25.8866
+7  0      49    0      0     48.2234 388         59     41.0092 329          172    37.3442 216          34.1808
+10 0      41    0      0     57.5178 525         97     47.9253 428          230    37.8495 295          30.3763
+```
+
+`delta_3m_12m` significa:
+
+```python
+dia_12m - dia_3m
+```
+
+Por exemplo, no doente `4`:
+
+```text
+dia_12m = 563
+dia_3m = 74
+delta_3m_12m = 489
+```
+
+Isto diz ao modelo: "este IMC de 40.5 foi medido 489 dias antes da medicao que
+estou a tentar prever".
+
+**Codigo Do Mapeamento**
+
+Esta parte serve para transformar os nomes compridos do CSV em nomes simples:
+
+```python
+rename = {
+    'IMC_kg/m2': 'imc_0',
+    'IMC_3_mes': 'imc_3m',
+    'IMC_6_mes': 'imc_6m',
+    'IMC_12_mes': 'imc_12m',
+
+    'Numero de Dias_3meses desde Cirurgia (D0)': 'dia_3m',
+    'Numero de Dias_6meses desde Cirurgia (D0)': 'dia_6m',
+    'Numero de Dias_1ano desde Cirurgia (D0)': 'dia_12m',
+
+    'Genero': 'genero',
+    'Idade_anos (a data cirurgia)': 'idade',
+    'Dislipidemia': 'dislipidemia',
+}
+
+df = df.rename(columns=rename, errors='ignore')
+df['dia_0'] = 0
+```
+
+O `dia_0` e sempre zero porque e o dia da cirurgia.
+
+Depois garantimos que as colunas dos dias sao numeros:
+
+```python
+for m in ["3m", "6m", "12m", "24m", "36m", "48m"]:
+    df[f"dia_{m}"] = pd.to_numeric(df[f"dia_{m}"], errors="coerce")
+```
+
+Se quisermos preencher dias em falta com valores aproximados:
+
+```python
+DIAS_NOMINAIS = {
+    "3m": 90,
+    "6m": 180,
+    "12m": 365,
+    "24m": 730,
+    "36m": 1095,
+    "48m": 1460,
+}
+
+for m in ["3m", "6m", "12m", "24m", "36m", "48m"]:
+    df[f"dia_{m}"] = df[f"dia_{m}"].fillna(DIAS_NOMINAIS[m])
+```
+
+**Codigo Das Features**
+
+Antes tinhas isto:
+
+```python
+feature_cols = ['genero_num', 'idade', 'dislipidemia'] + [f"imc_{m}" for m in marcos_input]
+```
+
+Depois passaria a ser isto:
+
+```python
+feature_cols = ['genero_num', 'idade', 'dislipidemia']
+
+for m in marcos_input:
+    delta_col = f"delta_{m}_ate_{marco_target}"
+    df_modelo[delta_col] = df_modelo[f"dia_{marco_target}"] - df_modelo[f"dia_{m}"]
+
+    feature_cols.extend([
+        f"dia_{m}",
+        f"imc_{m}",
+        delta_col,
+    ])
+```
+
+Para prever `12m`, o modelo usa os marcos anteriores:
+
+```python
+marcos_input = ["0", "3m", "6m"]
+marco_target = "12m"
+```
+
+Entao ele cria:
+
+```text
+dia_0,  imc_0,  delta_0_ate_12m
+dia_3m, imc_3m, delta_3m_ate_12m
+dia_6m, imc_6m, delta_6m_ate_12m
+```
+
+**Como Fica Na LSTM**
+
+A LSTM nao recebe uma linha plana. Ela recebe uma sequencia.
+
+Por exemplo, o doente `4`, para prever o IMC no D563, ficaria assim:
+
+```text
+Timestep 1: genero=0, idade=35, dislipidemia=0, dia=0,   imc=50.5651, dias_ate_alvo=563
+Timestep 2: genero=0, idade=35, dislipidemia=0, dia=74,  imc=40.5265, dias_ate_alvo=489
+Timestep 3: genero=0, idade=35, dislipidemia=0, dia=202, imc=32.3468, dias_ate_alvo=361
+Alvo: imc no dia 563 = 32.8673
+```
+
+O `reshape_lstm()` faria essa transformacao:
+
+```python
+static_count = 3
+step_feature_count = 3  # dia, imc, delta_dias
+timesteps = len(marcos_input)
+
+def reshape_lstm(data):
+    reshaped = np.zeros((data.shape[0], timesteps, static_count + step_feature_count))
+
+    for t in range(timesteps):
+        start = static_count + t * step_feature_count
+        end = start + step_feature_count
+
+        reshaped[:, t, :static_count] = data[:, :static_count]
+        reshaped[:, t, static_count:] = data[:, start:end]
+
+    return reshaped
+```
+
+Resumindo: o modelo deixaria de aprender "IMC aos 3 meses" como se fosse
+sempre D90. Passaria a aprender "IMC medido no D75", "IMC medido no D97",
+"IMC medido no D202", etc. Isto preserva muito melhor a realidade clinica das
+medicoes.
+
+
+UTILIZADOR:
+Nao percebi isto:
+
+```python
+for m in ["3m", "6m", "12m", "24m", "36m", "48m"]:
+    df[f"dia_{m}"] = pd.to_numeric(df[f"dia_{m}"], errors="coerce")
+```
+
+CODEX:
+Claro. Esse bocadinho serve so para garantir que as colunas dos dias ficam em
+formato **numerico**.
+
+Codigo:
+
+```python
+for m in ["3m", "6m", "12m", "24m", "36m", "48m"]:
+    df[f"dia_{m}"] = pd.to_numeric(df[f"dia_{m}"], errors="coerce")
+```
+
+E equivalente a escrever isto tudo a mao:
+
+```python
+df["dia_3m"] = pd.to_numeric(df["dia_3m"], errors="coerce")
+df["dia_6m"] = pd.to_numeric(df["dia_6m"], errors="coerce")
+df["dia_12m"] = pd.to_numeric(df["dia_12m"], errors="coerce")
+df["dia_24m"] = pd.to_numeric(df["dia_24m"], errors="coerce")
+df["dia_36m"] = pd.to_numeric(df["dia_36m"], errors="coerce")
+df["dia_48m"] = pd.to_numeric(df["dia_48m"], errors="coerce")
+```
+
+A variavel `m` vai assumindo estes valores, um de cada vez:
+
+```text
+"3m"
+"6m"
+"12m"
+"24m"
+"36m"
+"48m"
+```
+
+E isto:
+
+```python
+f"dia_{m}"
+```
+
+e uma **f-string**. Serve para construir texto dinamicamente.
+
+Por exemplo:
+
+```python
+m = "3m"
+f"dia_{m}"
+```
+
+da:
+
+```python
+"dia_3m"
+```
+
+Se:
+
+```python
+m = "12m"
+```
+
+entao:
+
+```python
+f"dia_{m}"
+```
+
+da:
+
+```python
+"dia_12m"
+```
+
+Portanto esta linha:
+
+```python
+df[f"dia_{m}"]
+```
+
+vai buscar a coluna correspondente no DataFrame.
+
+**E o que faz `pd.to_numeric`?**
+
+Converte valores para numeros.
+
+Por exemplo, se a coluna veio do CSV assim:
+
+```text
+"74"
+"90"
+"202"
+"-"
+""
+```
+
+o `pd.to_numeric(..., errors="coerce")` transforma em:
+
+```text
+74
+90
+202
+NaN
+NaN
+```
+
+Ou seja:
+
+```python
+errors="coerce"
+```
+
+quer dizer: "se nao conseguires converter para numero, mete `NaN`".
+
+Isto e util porque no teu CSV ha valores que podem vir vazios, com `-`, ou com
+texto. O modelo nao consegue trabalhar com texto nessas colunas; precisa de
+numeros ou `NaN` para depois limpar/imputar.
+
+Resumindo: esse `for` so esta a dizer:
+
+> Para cada coluna de dias, transforma os valores em numeros validos para o
+> modelo.
+
+
+UTILIZADOR:
+Explica isto tb:
+
+```python
+DIAS_NOMINAIS = {
+    "3m": 90,
+    "6m": 180,
+    "12m": 365,
+    "24m": 730,
+    "36m": 1095,
+    "48m": 1460,
+}
+
+for m in ["3m", "6m", "12m", "24m", "36m", "48m"]:
+    df[f"dia_{m}"] = df[f"dia_{m}"].fillna(DIAS_NOMINAIS[m])
+```
+
+CODEX:
+Claro. Isto serve para preencher **dias em falta** com um valor aproximado
+esperado.
+
+```python
+DIAS_NOMINAIS = {
+    "3m": 90,
+    "6m": 180,
+    "12m": 365,
+    "24m": 730,
+    "36m": 1095,
+    "48m": 1460,
+}
+```
+
+Isto e um dicionario Python.
+
+Esta a dizer:
+
+```text
+3m  corresponde aproximadamente a 90 dias
+6m  corresponde aproximadamente a 180 dias
+12m corresponde aproximadamente a 365 dias
+24m corresponde aproximadamente a 730 dias
+36m corresponde aproximadamente a 1095 dias
+48m corresponde aproximadamente a 1460 dias
+```
+
+Depois:
+
+```python
+for m in ["3m", "6m", "12m", "24m", "36m", "48m"]:
+    df[f"dia_{m}"] = df[f"dia_{m}"].fillna(DIAS_NOMINAIS[m])
+```
+
+Isto percorre cada marco temporal e preenche os valores em falta.
+
+Por exemplo, quando:
+
+```python
+m = "3m"
+```
+
+esta parte:
+
+```python
+df[f"dia_{m}"]
+```
+
+vira:
+
+```python
+df["dia_3m"]
+```
+
+e esta parte:
+
+```python
+DIAS_NOMINAIS[m]
+```
+
+vira:
+
+```python
+DIAS_NOMINAIS["3m"]
+```
+
+que e:
+
+```python
+90
+```
+
+Portanto, para `3m`, a linha fica equivalente a:
+
+```python
+df["dia_3m"] = df["dia_3m"].fillna(90)
+```
+
+Para `6m`, fica:
+
+```python
+df["dia_6m"] = df["dia_6m"].fillna(180)
+```
+
+E assim por diante.
+
+**Exemplo concreto**
+
+Imagina esta coluna:
+
+```text
+dia_3m
+74
+90
+NaN
+125
+NaN
+```
+
+Depois de:
+
+```python
+df["dia_3m"] = df["dia_3m"].fillna(90)
+```
+
+fica:
+
+```text
+dia_3m
+74
+90
+90
+125
+90
+```
+
+Ou seja: quando sabemos o dia real, usamos o dia real. Quando nao sabemos,
+usamos o valor nominal esperado.
+
+**Para que serve isto?**
+
+Serve para evitar perder doentes so porque falta a coluna do dia.
+
+Mas ha uma nuance importante: isto e uma aproximacao. Clinicamente, e melhor
+usar o dia real quando existe. O `fillna(90)` so entra quando o valor esta em
+falta.
+
+Resumindo:
+
+```python
+DIAS_NOMINAIS["3m"] = 90
+```
+
+quer dizer:
+
+> Se nao soubermos o dia exato da medicao dos "3 meses", assumimos que foi no
+> D90.
+
+
+UTILIZADOR:
+Duvida, mas vale a pena fazer isto? E que eu acho que nos dados, sempre que nao
+tens o dia escrito, tambem nao tens nenhum peso nesse dia escrito; Percorre os
+dados e confirma isto que estou a dizer.
+
+CODEX:
+Vou percorrer o CSV inteiro e contar, para cada marco temporal, os casos em que
+falta o "Numero de Dias..." mas existe peso/IMC. Isso responde diretamente se o
+`fillna(90)` teria algum efeito real ou se so estaria a inventar dias para
+medicoes inexistentes.
+
+A primeira contagem apanhou mal os nomes das colunas com acentos quando vieram
+pelo `DictReader`, por isso vou refazer por indice de coluna, que evita esse
+problema de codificacao. Os valores que vimos nas primeiras linhas mostram que
+os dias existem, portanto esta segunda passagem e a que interessa.
+
+Ha muitos casos em que falta o dia mas existe peso, mas vou apertar a definicao
+para "peso numerico valido", porque algumas celulas tem texto como `sem
+registo` ou `#VALUE!`. Assim a conclusao fica limpa.
+
+Percorri o `Base_dados_v1.csv` e a tua suspeita **nao se confirma totalmente**.
+
+Ha varios casos em que **nao existe o dia registado**, mas existe **peso
+numerico** e tambem IMC. Principalmente aos 3 meses.
+
+Resumo, em 645 linhas:
+
+```text
+Marco   dia+peso existem   falta dia mas peso existe
+3m      448                183
+6m      575                19
+12m     585                17
+24m     556                18
+36m     500                16
+48m     370                10
+60m     176                6
+72m     50                 0
+84m     10                 0
+```
+
+Exemplos reais em que **falta o dia**, mas ha peso e IMC:
+
+```text
+id 11   3m:  dia vazio, peso 140.6, IMC 48.08
+id 72   3m:  dia vazio, peso 125.5, IMC 47.24
+id 101  3m:  dia vazio, peso 94.5,  IMC 34.71
+id 11   6m:  dia vazio, peso 120.9, IMC 41.35
+id 11   12m: dia vazio, peso 107.5, IMC 36.76
+```
+
+Portanto, se fizermos:
+
+```python
+df["dia_3m"] = df["dia_3m"].fillna(90)
+```
+
+isso teria efeito real: iria atribuir `D90` a 183 medicoes dos "3 meses" que
+tem peso/IMC mas nao tem dia registado.
+
+Mas a decisao importante e esta: eu **nao faria `fillna(90)` cegamente** sem
+marcar que esse dia foi estimado.
+
+Melhor seria criar tambem uma variavel tipo:
+
+```python
+df["dia_3m_estimado"] = df["dia_3m"].isna().astype(int)
+df["dia_3m"] = df["dia_3m"].fillna(90)
+```
+
+Assim o modelo recebe:
+
+```text
+IMC = 48.08
+dia = 90
+dia_estimado = 1
+```
+
+e sabe que aquele `90` nao veio da base como dia real; foi uma aproximacao.
+
+A conclusao: **vale a pena usar os dias reais**, sim. Mas para os casos sem dia
+e com peso, eu usaria o dia nominal como fallback **com uma flag de estimado**,
+para nao enganar completamente o modelo.
+
+
+UTILIZADOR:
+Diz-me as linhas concretas em que isto esta a ocorrer
+
+CODEX:
+Vou listar as ocorrencias exatas como "linha logica do CSV"/linha da folha de
+calculo, isto e, contando o cabecalho como linha 1. Vou agrupar por marco
+temporal para ficar legivel.
+
+Vou ajustar ao que perguntaste literalmente: "falta o dia, mas existe peso". A
+listagem anterior estava ainda mais restrita, exigia tambem IMC numerico; agora
+vou apanhar peso numerico mesmo que o IMC esteja vazio ou invalido.
+
+Sim. No ficheiro `Base_dados_v1.csv`, estas sao as linhas onde **falta o dia da
+medicao**, mas existe **peso numerico** nesse marco.
+
+Estou a contar o cabecalho como linha 1, como numa folha Excel/CSV.
+
+```text
+3m  - 183 casos:
+7, 63, 89, 104, 128-129, 242, 281, 347, 471-491, 493-537, 539-646
+
+6m  - 19 casos:
+7, 89, 104, 126, 129, 231, 242, 256, 270, 274, 281, 347, 350, 354, 543, 578, 587, 590, 594
+
+12m - 17 casos:
+7, 28, 89, 104, 129, 233, 239, 242, 274, 281, 347, 354, 543, 578, 590, 595, 611
+
+24m - 18 casos:
+7, 11, 89, 104, 158, 201, 232-233, 239, 274, 281, 347, 354, 395, 543, 578, 590, 611
+
+36m - 16 casos:
+7, 63, 89, 104, 108, 158, 222, 239, 274, 281, 347, 395, 452, 504, 543, 548
+
+48m - 10 casos:
+7, 36, 63, 89, 104, 158, 239, 274, 281, 347
+
+60m - 6 casos:
+7, 36, 63, 89, 104, 158
+```
+
+Nao encontrei casos desse tipo aos `72m`; aos `84m` tambem nao.
+
+Nota pequena mas importante: nos `3m`, ha 183 casos com peso numerico e dia em
+falta; destes, 2 tem peso numerico mas o IMC esta como `#VALUE!`: linhas `627`
+e `640`.
+
+
+UTILIZADOR:
+Aqui em vez de dizeres o cabecalho como linha 1, quero que uses o valor que
+esta escrito na primeira coluna dessa linha.
+
+CODEX:
+Vou refazer a listagem usando o identificador da primeira coluna de cada linha,
+em vez do numero da linha do CSV. Vou manter o agrupamento por marco temporal.
+
+Claro. Usando agora o valor da **primeira coluna** de cada linha, os casos onde
+falta o dia mas existe peso numerico sao:
+
+```text
+3m - 183 casos:
+11, 72, 101, 116, 142, 143, 262, 304, 391, 593, 594, 595, 596, 598, 599, 600, 601, 602, 603, 608, 609, 610, 611, 612, 613, 617, 618, 619, 620, 621, 626, 627, 628, 630, 631, 632, 633, 634, 635, 636, 637, 638, 639, 640, 642, 643, 644, 645, 646, 647, 648, 649, 650, 651, 652, 653, 654, 655, 656, 657, 658, 659, 660, 661, 662, 663, 664, 665, 670, 671, 672, 676, 677, 678, 681, 683, 684, 685, 686, 687, 689, 690, 691, 692, 693, 695, 696, 697, 698, 699, 700, 701, 702, 703, 704, 705, 706, 707, 708, 709, 710, 712, 713, 714, 715, 716, 717, 718, 719, 720, 721, 722, 723, 724, 725, 726, 727, 728, 729, 730, 731, 732, 733, 734, 736, 737, 738, 739, 740, 741, 742, 744, 745, 746, 747, 748, 749, 750, 751, 752, 753, 754, 755, 756, 758, 759, 760, 761, 762, 763, 764, 765, 766, 767, 768, 769, 770, 771, 772, 773, 775, 776, 777, 778, 780, 783, 784, 785, 786, 787, 788, 789, 790, 791, 792, 793, 794, 795, 796, 797, 798, 799, 800
+
+6m - 19 casos:
+11, 101, 116, 140, 143, 250, 262, 277, 291, 295, 304, 391, 394, 398, 687, 725, 734, 738, 742
+
+12m - 17 casos:
+11, 35, 101, 116, 143, 252, 259, 262, 295, 304, 391, 398, 687, 725, 738, 744, 761
+
+24m - 18 casos:
+11, 18, 101, 116, 173, 217, 251, 252, 259, 295, 304, 391, 398, 463, 687, 725, 738, 761
+
+36m - 16 casos:
+11, 72, 101, 116, 121, 173, 241, 259, 295, 304, 391, 463, 560, 638, 687, 693
+
+48m - 10 casos:
+11, 43, 72, 101, 116, 173, 259, 295, 304, 391
+
+60m - 6 casos:
+11, 43, 72, 101, 116, 173
+```
+
+Nota: nos `3m`, os IDs `778` e `794` tem peso numerico, mas o IMC esta como
+`#VALUE!`.
+
+
+UTILIZADOR:
+Okay, o codigo que fizeste depois de eu te dar este feedback [...] parece muito
+bom; Podes reescrever tudo, tendo em conta que no interface.py eu quero que se
+preveja tudo ate aos 5 anos (60meses), mas quero que quando estas a treinar os
+modelos uses os dados dos pesos e IMC ate ao dia do mes 84 (7 anos), isto
+porque vao haver doentes que por exemplo nao vao por exemplo ter registo do
+peso (nem do dia de medicao do peso) aos 5 anos, mas podem ter registo do peso
+e do dia de medicao do peso aos 6 anos ou aos 7 anos ; Mais uma coisa no
+Interface BariCurve, quero que apareca em vez do IMC Inicial apareca antes o
+Peso e a Altura e quando vamos diz "IMC real aos 3 meses", em vez disso
+apareca: "Data em que foi feita a cirurgia" e "data em que o peso dos 3 meses
+foi medido", dessa forma no proprio modelo as curvas de ajuste apos escrever 3
+meses podem tb calcular o dia real exacto pos cirurgia no qual foi medido o peso
+dos 3 meses que estamos a inserir no modelo.
+
+CODEX:
+Vou transformar isto numa alteracao real ao projeto. Primeiro vou ler com
+cuidado os tres ficheiros que tem de ficar alinhados: treino (`LSTM_Curva.py`),
+interface (`Interface.py`) e teste clinico (`Teste_Paciente.py`), porque o
+formato de input do modelo tem de ser exatamente o mesmo em todos.
+
+Vou fazer a alteracao em tres pecas: primeiro o treino passa a ser um modelo
+temporal unico que aprende com medicoes ate aos 84 meses; depois a interface
+passa a pedir peso/altura/datas e preve ate aos 60 meses; por fim atualizo o
+script de teste para usar o mesmo formato.
+
+Vou substituir a logica antiga por uma versao em que cada medicao e uma linha
+temporal interna do tipo `dia, IMC, delta ate ao alvo`, com uma flag quando o
+dia foi estimado. Assim os casos sem D60 mas com D72/D84 entram como treino
+adicional sem serem usados como input futuro indevido.
+
+Novo `LSTM_Curva.py` criado com cabecalho:
+
+```python
+"""
+BariCurve - LSTM temporal com dias reais desde a cirurgia
+=========================================================
+Este script treina um unico modelo LSTM capaz de prever o IMC em diferentes
+dias alvo. Cada medicao entra como par temporal: dia desde cirurgia + IMC.
+
+O treino usa medicoes disponiveis ate 84 meses, mas a interface clinica
+preve apenas ate 60 meses.
+"""
+```
+
+Principais constantes:
+
+```python
+MARCOS_TREINO = [
+    {"nome": "0", "meses": 0, "dia_nominal": 0},
+    {"nome": "3m", "meses": 3, "dia_nominal": 90},
+    {"nome": "6m", "meses": 6, "dia_nominal": 180},
+    {"nome": "12m", "meses": 12, "dia_nominal": 365},
+    {"nome": "24m", "meses": 24, "dia_nominal": 730},
+    {"nome": "36m", "meses": 36, "dia_nominal": 1095},
+    {"nome": "48m", "meses": 48, "dia_nominal": 1460},
+    {"nome": "60m", "meses": 60, "dia_nominal": 1825},
+    {"nome": "72m", "meses": 72, "dia_nominal": 2190},
+    {"nome": "84m", "meses": 84, "dia_nominal": 2555},
+]
+
+MARCOS_INTERFACE = [m for m in MARCOS_TREINO if m["meses"] <= 60]
+MAX_TIMESTEPS = len(MARCOS_TREINO) - 1
+
+SEQ_FEATURE_NAMES = [
+    "genero_num",
+    "idade",
+    "dislipidemia",
+    "dia_medicao",
+    "imc_medicao",
+    "delta_dias_ate_alvo",
+    "dia_medicao_estimado",
+    "dia_alvo",
+    "dia_alvo_estimado",
+    "medicao_valida",
+]
+```
+
+Funcao para construir uma sequencia temporal:
+
+```python
+def construir_sequencia(static_values, historico, dia_alvo, dia_alvo_estimado=0):
+    historico_valido = [
+        m for m in historico if np.isfinite(m["dia"]) and np.isfinite(m["imc"]) and m["dia"] < dia_alvo
+    ]
+    historico_valido = sorted(historico_valido, key=lambda item: item["dia"])[-MAX_TIMESTEPS:]
+
+    seq = np.zeros((MAX_TIMESTEPS, NUM_SEQ_FEATURES), dtype=float)
+
+    for t, medicao in enumerate(historico_valido):
+        seq[t] = [
+            static_values["genero_num"],
+            static_values["idade"],
+            static_values["dislipidemia"],
+            medicao["dia"],
+            medicao["imc"],
+            dia_alvo - medicao["dia"],
+            medicao.get("dia_estimado", 0),
+            dia_alvo,
+            dia_alvo_estimado,
+            1.0,
+        ]
+
+    return seq
+```
+
+Treino do modelo temporal:
+
+```python
+def treinar_modelo_temporal(df):
+    X, y, nomes_alvo = criar_amostras_treino(df)
+    ...
+    modelo = Sequential(
+        [
+            Input(shape=(MAX_TIMESTEPS, NUM_SEQ_FEATURES)),
+            LSTM(32, activation="tanh", recurrent_dropout=0.2, kernel_regularizer=l2(0.001)),
+            Dropout(0.25),
+            Dense(32, activation="relu"),
+            Dense(1),
+        ]
+    )
+    modelo.compile(optimizer=Adam(learning_rate=0.001), loss=Huber(delta=1.0))
+```
+
+Depois atualizei a interface:
+
+```python
+data_cirurgia = st.date_input("Data em que foi feita a cirurgia", value=date.today())
+peso_0 = st.number_input("Peso no dia da cirurgia (kg)", ...)
+altura = st.number_input("Altura (m)", ...)
+
+imc_0 = calcular_imc(peso_0, altura)
+st.caption(f"IMC inicial calculado: {imc_0:.2f} kg/m2")
+```
+
+E para a medicao real aos 3 meses:
+
+```python
+data_peso_3m = st.date_input(
+    "Data em que o peso dos 3 meses foi medido",
+    value=data_cirurgia + timedelta(days=90),
+)
+peso_3m_real = st.number_input(
+    "Peso medido nessa data (kg)",
+    min_value=30.0,
+    max_value=250.0,
+    value=100.0,
+    step=0.1,
+)
+
+dia_3m_real = (data_peso_3m - data_cirurgia).days
+imc_3m_real = calcular_imc(peso_3m_real, altura)
+```
+
+Modelo treinado:
+
+```text
+Amostras temporais criadas: 3522
+Distribuicao dos alvos usados no treino:
+12m    599
+24m    571
+36m    513
+3m     628
+48m    379
+60m    181
+6m     591
+72m     50
+84m     10
+
+MAE de teste do modelo temporal: 1.860 IMC
+Modelo salvo em:
+previsao_peso_2026\models\modelo_lstm_temporal.keras
+```
+
+Resposta final nessa fase:
+
+Feito. Reescrevi a logica para o modelo temporal com dias reais.
+
+Alterei:
+
+`LSTM_Curva.py`
+Agora treina um unico modelo `modelo_lstm_temporal.keras`. Cada medicao entra
+como:
+
+```text
+dia da medicao + IMC medido + dias ate ao alvo
+```
+
+O treino usa dados ate `84m`, incluindo alvos `60m`, `72m` e `84m`. A interface
+so preve ate `60m`.
+
+`Interface.py`
+Agora pede:
+
+```text
+Peso no dia da cirurgia
+Altura
+Data da cirurgia
+Peso medido aos 3 meses
+Data em que esse peso foi medido
+```
+
+Depois calcula automaticamente:
+
+```text
+IMC inicial = peso / altura^2
+IMC da medicao = peso_3m / altura^2
+D real = data_medicao - data_cirurgia
+```
+
+`Teste_Paciente.py`
+Tambem ficou alinhado com o novo modelo temporal.
+
+Treinei o novo modelo. Resultado:
+
+```text
+Amostras temporais criadas: 3522
+60m: 181 amostras
+72m: 50 amostras
+84m: 10 amostras
+MAE de teste: 1.860 IMC
+```
+
+Os novos ficheiros foram criados em `previsao_peso_2026/models`:
+
+```text
+modelo_lstm_temporal.keras
+scaler_x_temporal.pkl
+scaler_y_temporal.pkl
+metadata_lstm_temporal.pkl
+```
+
+A app Streamlit ficou a correr em:
+
+```text
+http://localhost:8502
+```
+
+
+UTILIZADOR:
+Todas as alteracoes que fizeste podes por favor meter numa nova pasta chamada
+previsao_peso_2026_versao2.0
+
+CODEX:
+Vou criar uma copia completa da pasta `previsao_peso_2026` com o estado atual,
+incluindo os scripts alterados e os novos ficheiros do modelo temporal, para
+`previsao_peso_2026_versao2.0`.
+
+A pasta ainda nao existe, perfeito. Vou fazer uma copia recursiva completa
+agora.
+
+Copia criada. Vou confirmar que os ficheiros principais e o modelo temporal
+estao la dentro.
+
+Vou so validar a sintaxe na nova pasta tambem, porque o nome tem `2.0` e quero
+garantir que isso nao estraga a execucao por caminho.
+
+Feito. Criei a nova pasta:
+
+```text
+previsao_peso_2026_versao2.0
+```
+
+Ela inclui os scripts alterados:
+
+```text
+Scripts/Interface.py
+Scripts/LSTM_Curva.py
+Scripts/Teste_Paciente.py
+```
+
+e tambem os novos ficheiros do modelo temporal:
+
+```text
+models/modelo_lstm_temporal.keras
+models/scaler_x_temporal.pkl
+models/scaler_y_temporal.pkl
+models/metadata_lstm_temporal.pkl
+```
+
+Validei a sintaxe na nova pasta e esta tudo ok. Para correr a nova versao:
+
+```powershell
+conda activate bariatric
+streamlit run previsao_peso_2026_versao2.0\Scripts\Interface.py
+```
+
+
+UTILIZADOR:
+Okay, todas as proximas alteracoes vao ser feitas na pasta
+previsao_peso_2026_versao2.0 Quero que voltes a correr a
+comparacao_performance_modelos.py para ver se o LSTM e mesmo o melhor (tem em
+conta todas estas novas alteracoes ao codigo), nomeadamente a questao de
+usarmos os dias exactos. Quero tambem que experimentes usar mais 2 modelos
+extra: lightGBM e o CatBoost. Corrige todos os ficheiros nessa pasta com essas
+alteracoes.
+
+CODEX:
+Vou trabalhar so dentro de `previsao_peso_2026_versao2.0`, como pediste.
+Primeiro vou abrir o script de comparacao atual e confirmar que dependencias
+(`lightgbm`, `catboost`) existem no ambiente `bariatric`; depois adapto a
+comparacao para usar a representacao temporal com dias reais.
+
+No ambiente `bariatric` nao estao instalados `xgboost`, `lightgbm` nem
+`catboost`. Como a comparacao original ja incluia XGBoost, vou instalar os tres
+no ambiente e deixar o script com importacao explicita, para a experiencia ficar
+reprodutivel.
+
+Comando:
+
+```powershell
+conda run -n bariatric python -m pip install xgboost lightgbm catboost
+```
+
+Vou reescrever o comparador para todos os modelos receberem exatamente a mesma
+representacao temporal: sequencia com `dia_medicao`, `imc_medicao`,
+`delta_dias_ate_alvo` e flags de dia estimado. Para evitar uma comparacao
+demasiado otimista, vou usar `GroupKFold`, mantendo as medicoes do mesmo doente
+no mesmo fold.
+
+Novo ficheiro `Comparacao_Performance_Modelos.py` com cabecalho:
+
+```python
+"""
+Comparacao temporal dos modelos BariCurve
+=========================================
+Esta versao usa a mesma representacao temporal da versao 2.0:
+cada medicao entra como dia real desde cirurgia + IMC + delta ate ao alvo.
+
+Modelos comparados:
+  - Random Forest
+  - XGBoost
+  - LightGBM
+  - CatBoost
+  - MLP
+  - LSTM
+
+A validacao usa GroupKFold para que medicoes do mesmo doente nao aparecam ao
+mesmo tempo em treino e teste.
+"""
+```
+
+Foram avaliados:
+
+```python
+modelos = [
+    "Random Forest",
+    "XGBoost",
+    "LightGBM",
+    "CatBoost",
+    "MLP",
+    "LSTM",
+]
+```
+
+LSTM no comparador:
+
+```python
+def criar_modelo_lstm():
+    modelo = Sequential(
+        [
+            Input(shape=(MAX_TIMESTEPS, NUM_SEQ_FEATURES)),
+            LSTM(32, activation="tanh", recurrent_dropout=0.2, kernel_regularizer=l2(0.001)),
+            Dropout(0.25),
+            Dense(32, activation="relu"),
+            Dense(1),
+        ]
+    )
+    modelo.compile(optimizer=Adam(learning_rate=0.001), loss=Huber(delta=1.0))
+    return modelo
+```
+
+Modelos extra:
+
+```python
+lgbm = LGBMRegressor(
+    n_estimators=500,
+    learning_rate=0.03,
+    num_leaves=16,
+    min_child_samples=10,
+    subsample=0.85,
+    colsample_bytree=0.85,
+    random_state=42,
+    n_jobs=-1,
+    verbose=-1,
+)
+```
+
+```python
+cat = CatBoostRegressor(
+    iterations=500,
+    learning_rate=0.03,
+    depth=4,
+    loss_function="RMSE",
+    eval_metric="MAE",
+    random_seed=42,
+    verbose=False,
+    allow_writing_files=False,
+)
+```
+
+A comparacao terminou:
+
+```text
+A iniciar comparacao temporal BariCurve 2.0...
+Dados: previsao_peso_2026_versao2.0\Dados\Base_dados_v1.csv
+Doentes carregados: 645
+Amostras temporais: 3522
+Distribuicao dos alvos:
+12m    599
+24m    571
+36m    513
+3m     628
+48m    379
+60m    181
+6m     591
+72m     50
+84m     10
+Formato LSTM: (3522, 9, 10)
+Formato tabular: (3522, 90)
+```
+
+Resultados por fold:
+
+```text
+Fold 1/5
+  Random Forest: MAE fold = 1.990
+  XGBoost      : MAE fold = 2.221
+  LightGBM     : MAE fold = 2.077
+  CatBoost     : MAE fold = 2.113
+  MLP          : MAE fold = 1.965
+  LSTM         : MAE fold = 1.812
+
+Fold 2/5
+  Random Forest: MAE fold = 1.996
+  XGBoost      : MAE fold = 2.301
+  LightGBM     : MAE fold = 2.103
+  CatBoost     : MAE fold = 2.231
+  MLP          : MAE fold = 2.069
+  LSTM         : MAE fold = 1.809
+
+Fold 3/5
+  Random Forest: MAE fold = 2.133
+  XGBoost      : MAE fold = 2.312
+  LightGBM     : MAE fold = 2.144
+  CatBoost     : MAE fold = 2.216
+  MLP          : MAE fold = 2.093
+  LSTM         : MAE fold = 1.911
+
+Fold 4/5
+  Random Forest: MAE fold = 2.068
+  XGBoost      : MAE fold = 2.253
+  LightGBM     : MAE fold = 2.091
+  CatBoost     : MAE fold = 2.213
+  MLP          : MAE fold = 2.316
+  LSTM         : MAE fold = 1.882
+
+Fold 5/5
+  Random Forest: MAE fold = 2.374
+  XGBoost      : MAE fold = 2.659
+  LightGBM     : MAE fold = 2.405
+  CatBoost     : MAE fold = 2.534
+  MLP          : MAE fold = 2.266
+  LSTM         : MAE fold = 2.072
+```
+
+Ranking final ate 60m:
+
+```text
+1. LSTM           MAE 1.893
+2. Random Forest  MAE 2.098
+3. MLP            MAE 2.125
+4. LightGBM       MAE 2.149
+5. CatBoost       MAE 2.251
+6. XGBoost        MAE 2.336
+```
+
+Ranking ate 84m:
+
+```text
+LSTM           MAE 1.897
+Random Forest  MAE 2.112
+MLP            MAE 2.142
+LightGBM       MAE 2.164
+CatBoost       MAE 2.261
+XGBoost        MAE 2.349
+```
+
+MAE por marco:
+
+```text
+Modelo  CatBoost   LSTM  LightGBM    MLP  Random Forest  XGBoost
+Marco                                                           
+3m         1.884  2.027     1.800  1.938          1.851    1.856
+6m         2.132  1.905     1.960  1.935          1.860    2.222
+12m        2.530  1.978     2.283  2.247          2.139    2.601
+24m        2.410  1.839     2.272  2.254          2.175    2.500
+36m        2.156  1.740     2.171  2.082          2.160    2.323
+48m        2.331  1.827     2.361  2.167          2.402    2.477
+60m        2.595  1.853     2.644  2.616          2.547    2.718
+72m        2.714  2.162     2.861  3.041          2.759    2.990
+84m        3.526  1.993     3.928  3.532          3.628    3.755
+```
+
+Resposta final:
+
+Feito, so mexi na pasta `previsao_peso_2026_versao2.0`.
+
+Atualizei `Comparacao_Performance_Modelos.py` para usar a nova logica temporal
+com dias reais, e adicionei:
+
+```text
+LightGBM
+CatBoost
+XGBoost
+Random Forest
+MLP
+LSTM
+```
+
+Tambem instalei no ambiente `bariatric`:
+
+```text
+xgboost
+lightgbm
+catboost
+```
+
+e deixei isso registado em:
+
+```text
+requirements_modelos_extra.txt
+```
+
+Resultado principal: **sim, com esta comparacao temporal, a LSTM foi o melhor
+modelo globalmente**.
+
+
+UTILIZADOR:
+Tens explicacao porque que isto ocorre? "Nota importante: a LSTM nao ganha em
+todos os marcos isolados. Aos 3m, por exemplo, LightGBM/Random Forest ficam
+ligeiramente melhores. Mas dos 12m em diante, e no global ate 60m, a LSTM e
+claramente a melhor."
+
+CODEX:
+Sim, ha uma explicacao bastante plausivel.
+
+Aos **3 meses**, o problema e quase "tabular simples". Para prever `3m`, o
+modelo praticamente so tem isto:
+
+```text
+genero, idade, dislipidemia, IMC inicial, dia alvo
+```
+
+Ou seja, ainda **nao existe uma trajetoria real anterior** do doente. A LSTM e
+boa a aprender sequencias, padroes temporais e evolucao ao longo do tempo, mas
+aos 3 meses ela quase nao tem sequencia para interpretar. Tem basicamente o
+ponto inicial e esta a tentar adivinhar o primeiro salto.
+
+Modelos como **Random Forest** e **LightGBM** sao muito fortes neste tipo de
+problema tabular curto:
+
+```text
+poucas variaveis
+relacoes nao lineares simples
+pouca sequencia temporal
+```
+
+Por isso conseguem ser ligeiramente melhores aos `3m`.
+
+A partir dos **6m, 12m, 24m, 36m...**, a situacao muda. O modelo comeca a ter
+uma historia:
+
+```text
+D0 -> IMC inicial
+D75 -> IMC real aos 3m
+D180 -> previsao/medicao dos 6m
+D365 -> previsao/medicao dos 12m
+...
+```
+
+Aqui a pergunta deixa de ser so:
+
+```text
+Qual sera o IMC?
+```
+
+e passa a ser mais:
+
+```text
+Como e que esta curva esta a evoluir ao longo do tempo?
+A perda esta a abrandar?
+O doente esta abaixo/acima da trajetoria esperada?
+Quanto tempo passou entre medicoes?
+```
+
+E precisamente aqui que a **LSTM** tem vantagem, porque foi desenhada para
+aprender padroes sequenciais. Ela consegue usar a ordem temporal e a relacao
+entre medicoes sucessivas de forma mais natural.
+
+Tambem ha outro ponto: quanto mais longe vais no tempo, maior e a importancia
+da **dinamica da curva**. Aos 3 meses, a previsao depende muito do ponto
+inicial. Aos 24, 36, 48 ou 60 meses, depende mais da forma da trajetoria:
+
+```text
+perda inicial rapida
+plateau
+eventual reganho
+estabilizacao
+```
+
+A LSTM captura melhor esse comportamento longitudinal.
+
+Portanto, resumindo:
+
+```text
+3m:
+problema tabular curto -> Random Forest / LightGBM podem ganhar
+
+12m em diante:
+problema temporal/longitudinal -> LSTM ganha
+
+global ate 60m:
+a vantagem temporal da LSTM compensa a pequena perda no inicio
+```
+
+Isto ate e um bom sinal: sugere que a arquitetura esta a aprender algo
+especifico da trajetoria, e nao apenas a fazer uma regressao tabular basica.
+
+
+UTILIZADOR:
+Okay, no interface.py da previsao_peso_2026_versao2.0 Quero que acrescentes
+agora tambem um "inserir peso real medido aos 6meses"; "inserir peso real
+medido aos 12meses"; "inserir peso real medido aos 2 anos"; "inserir peso real
+medido aos 3 anos"; "inserir peso real medido aos 4 anos"; faz as alteracoes
+no codigo e corre tudo para estar pronto a usar a interface.py; Quero ainda que
+para alem de um grafico de "projecao de evolucao do imc" apareca tambem um
+grafico de "projecao de evolucao do peso" (este 2 grafico vai ser feito com
+base nos valores do IMC do grafico "projecao de evolucao do imc" ; Sabendo que
+para obter os valores do peso, basta multiplicar o IMC em cada ponto do grafico
+pela altura ao quadrado)
+
+CODEX:
+Vou mexer so em `previsao_peso_2026_versao2.0/Interface.py`. A interface vai
+passar a aceitar medicoes reais adicionais, e depois desenho dois graficos com
+a mesma trajetoria: um em IMC e outro em peso calculado por `peso = IMC *
+altura^2`.
+
+Vou generalizar o bloco dos "3 meses" para uma lista de medicoes reais
+opcionais. Assim fica menos repetitivo e todas entram no mesmo formato temporal
+que o modelo ja entende.
+
+Foi acrescentada a configuracao:
+
+```python
+MEDICOES_REAIS_CONFIG = [
+    {
+        "nome": "3m_real",
+        "label": "3 meses",
+        "checkbox": "Inserir peso real medido aos 3 meses?",
+        "data_label": "Data em que o peso dos 3 meses foi medido",
+        "dia_nominal": 90,
+        "peso_default_factor": 0.85,
+    },
+    {
+        "nome": "6m_real",
+        "label": "6 meses",
+        "checkbox": "Inserir peso real medido aos 6 meses?",
+        "data_label": "Data em que o peso dos 6 meses foi medido",
+        "dia_nominal": 180,
+        "peso_default_factor": 0.75,
+    },
+    {
+        "nome": "12m_real",
+        "label": "12 meses",
+        "checkbox": "Inserir peso real medido aos 12 meses?",
+        "data_label": "Data em que o peso dos 12 meses foi medido",
+        "dia_nominal": 365,
+        "peso_default_factor": 0.68,
+    },
+    {
+        "nome": "24m_real",
+        "label": "2 anos",
+        "checkbox": "Inserir peso real medido aos 2 anos?",
+        "data_label": "Data em que o peso dos 2 anos foi medido",
+        "dia_nominal": 730,
+        "peso_default_factor": 0.65,
+    },
+    {
+        "nome": "36m_real",
+        "label": "3 anos",
+        "checkbox": "Inserir peso real medido aos 3 anos?",
+        "data_label": "Data em que o peso dos 3 anos foi medido",
+        "dia_nominal": 1095,
+        "peso_default_factor": 0.65,
+    },
+    {
+        "nome": "48m_real",
+        "label": "4 anos",
+        "checkbox": "Inserir peso real medido aos 4 anos?",
+        "data_label": "Data em que o peso dos 4 anos foi medido",
+        "dia_nominal": 1460,
+        "peso_default_factor": 0.66,
+    },
+]
+
+def peso_default(peso_inicial, factor):
+    return float(np.clip(round(peso_inicial * factor, 1), 30.0, 250.0))
+```
+
+Depois, na sidebar:
+
+```python
+st.header("Medicoes reais pos-operatorias")
+medicoes_reais_extra = []
+
+for config in MEDICOES_REAIS_CONFIG:
+    usa_medicao = st.checkbox(config["checkbox"], key=f"usa_{config['nome']}")
+
+    if usa_medicao:
+        data_medicao = st.date_input(
+            config["data_label"],
+            value=data_cirurgia + timedelta(days=config["dia_nominal"]),
+            key=f"data_{config['nome']}",
+        )
+        peso_real = st.number_input(
+            f"Peso medido aos {config['label']} (kg)",
+            min_value=30.0,
+            max_value=250.0,
+            value=peso_default(peso_0, config["peso_default_factor"]),
+            step=0.1,
+            key=f"peso_{config['nome']}",
+        )
+
+        dia_real = (data_medicao - data_cirurgia).days
+        imc_real = calcular_imc(peso_real, altura)
+        medicoes_reais_extra.append(
+            {
+                "nome": config["nome"],
+                "label": config["label"],
+                "dia": float(dia_real),
+                "imc": float(imc_real),
+                "peso": float(peso_real),
+                "dia_estimado": 0.0,
+                "origem": "real",
+            }
+        )
+
+        st.caption(f"Medicao real: D{dia_real} | IMC calculado: {imc_real:.2f} kg/m2")
+```
+
+Depois essas medicoes entram no historico:
+
+```python
+for medicao in medicoes_reais_extra:
+    medicoes_iniciais.append(
+        {
+            "nome": medicao["nome"],
+            "dia": float(medicao["dia"]),
+            "imc": float(medicao["imc"]),
+            "dia_estimado": 0.0,
+            "origem": "real",
+        }
+    )
+```
+
+Foi acrescentada a coluna:
+
+```python
+"Peso estimado (kg)": round(r["imc"] * (altura**2), 1)
+```
+
+E o grafico de peso:
+
+```python
+fig_peso, ax_peso = plt.subplots(figsize=(11, 5.5))
+
+pesos_prev = imcs_prev * (altura**2)
+pesos_prev_min = (imcs_prev - 2) * (altura**2)
+pesos_prev_max = (imcs_prev + 2) * (altura**2)
+
+ax_peso.plot(
+    meses_prev,
+    pesos_prev,
+    "sb--",
+    label="Projecao BariCurve ate 5 anos",
+    linewidth=2,
+)
+ax_peso.fill_between(
+    meses_prev,
+    pesos_prev_min,
+    pesos_prev_max,
+    color="blue",
+    alpha=0.1,
+    label="Margem equivalente a +/-2 IMC",
+)
+```
+
+Resposta final:
+
+Feito em `Interface.py`.
+
+Agora a sidebar permite inserir pesos reais medidos em:
+
+```text
+3 meses
+6 meses
+12 meses
+2 anos
+3 anos
+4 anos
+```
+
+Para cada um, a interface pede a data da medicao e o peso medido. O codigo
+calcula automaticamente:
+
+```text
+dia real pos-cirurgia = data da medicao - data da cirurgia
+IMC = peso / altura^2
+```
+
+Tambem adicionei a tabela uma coluna `Peso estimado (kg)` e acrescentei um
+segundo grafico:
+
+```text
+Projecao de evolucao do peso
+```
+
+Esse grafico e calculado a partir da curva de IMC, usando:
+
+```python
+peso = IMC * altura**2
+```
+
+Validei a sintaxe e deixei a app a correr aqui:
+
+```text
+http://localhost:8503
+```
+
+A porta `8502` ainda estava ocupada pela versao anterior, por isso usei `8503`.
+
+
+UTILIZADOR:
+Acrescenta esta conversa toda em mark down abaixo do ficheiro
+requirements_modelos_extra.txt
+
+CODEX:
+Vou acrescentar ao fim do `requirements_modelos_extra.txt` uma secao Markdown
+com o historico estruturado da conversa: decisoes, alteracoes feitas, comandos
+principais e resultados.
+
+Feito. Acrescentei ao fim de:
+
+`requirements_modelos_extra.txt`
+
+uma secao Markdown com o historico estruturado da conversa e das alteracoes
+feitas ao projeto: Streamlit, uso dos dias reais, criacao da versao 2.0, treino
+temporal, comparacao de modelos, resultados, e alteracoes mais recentes na
+interface.
+
+Mantive no topo as dependencias:
+
+```text
+xgboost
+lightgbm
+catboost
+```
+
+
+UTILIZADOR:
+Desculpa nao gosto desta ultima alteracao que sugeri, podes voltar atras?
+cancela este meu ultimo request.
+
+CODEX:
+Claro, vou reverter so essa ultima alteracao no `requirements_modelos_extra.txt`,
+deixando o ficheiro novamente apenas com as dependencias dos modelos extra.
+
+Feito, reverti esse ultimo pedido.
+
+O ficheiro voltou a ficar so com:
+
+```text
+xgboost
+lightgbm
+catboost
+```
+
+
+UTILIZADOR:
+Obrigado
+
+CODEX:
+De nada. Esta tudo limpinho outra vez.
+
+
+UTILIZADOR:
+Olha eu queria era que me fizesses um ficheiro word com esta conversa toda que
+tivemos hoje para eu descarregar, pode ser?
+
+CODEX:
+Posso sim. Vou criar um `.docx` na pasta do projeto com um registo organizado
+da conversa de hoje, incluindo decisoes, alteracoes feitas, comandos, resultados
+e ficheiros criados.
+
+Como `python-docx` nao esta instalado no ambiente, vou criar o `.docx`
+diretamente com a estrutura OpenXML do Word. Fica na pasta da versao 2.0 para
+estar junto do trabalho.
+
+
+UTILIZADOR:
+Desculpa cria antes um ficheiro .txt, este formato ja esta instalado
+
+CODEX:
+Sem problema. Vou criar um `.txt` simples na pasta
+`previsao_peso_2026_versao2.0` com um registo organizado da conversa e das
+alteracoes de hoje.
+
+Feito. Criei o ficheiro:
+
+`previsao_peso_2026_versao2.0/conversa_2026-05-07.txt`
+
+Inclui um registo organizado da conversa de hoje, com as decisoes, alteracoes
+ao codigo, resultados dos modelos e comandos uteis.
+
+
+UTILIZADOR:
+Queria que o ficheiro conversa_2026-05-07 tivesse praticamente ipsis verbis o
+que esta na conversa (codigo e tudo).
+
+CODEX:
+Sim, tens razao: o ficheiro que fiz ficou mais como resumo. Vou substitui-lo
+por uma transcricao muito mais proxima da conversa, com falas em ordem e os
+blocos de codigo/comandos que apareceram.
+

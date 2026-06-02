@@ -20,15 +20,12 @@ app.add_middleware(
 )
 # ============================================================
 # CAMINHOS
-# ============================================================
-PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
-PASTA_MODELS = os.path.join(PROJECT_DIR, "models")
- 
-CAMINHO_MODELO   = os.path.join(PASTA_MODELS, "modelo_lstm_curva4_pesoproposta_pesomax.keras")
-CAMINHO_SCALER_X = os.path.join(PASTA_MODELS, "scaler_x_lstm_curva4_pesoproposta_pesomax.pkl")
-CAMINHO_SCALER_Y = os.path.join(PASTA_MODELS, "scaler_y_lstm_curva4_pesoproposta_pesomax.pkl")
-CAMINHO_METADATA = os.path.join(PASTA_MODELS, "metadata_lstm_curva4_pesoproposta_pesomax.pkl")
- 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+CAMINHO_MODELO = os.path.join(BASE_DIR, "modelo_lstm_curva4_pesoproposta_pesomax.keras")
+CAMINHO_SCALER_X = os.path.join(BASE_DIR, "scaler_x_lstm_curva4_pesoproposta_pesomax.pkl")
+CAMINHO_SCALER_Y = os.path.join(BASE_DIR, "scaler_y_lstm_curva4_pesoproposta_pesomax.pkl")
+CAMINHO_METADATA = os.path.join(BASE_DIR, "metadata_lstm_curva4_pesoproposta_pesomax.pkl")
 # ============================================================
 # CONSTANTES (têm de coincidir com o script de treino)
 # ============================================================

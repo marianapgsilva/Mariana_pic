@@ -232,7 +232,8 @@ def health():
     except Exception as e:
         return {"status": "erro", "detalhe": str(e)}
  
- 
+print("DATA RECEBIDA:", data)
+
 @app.post("/predict")
 def predict(data: PatientData):
     try:
@@ -255,5 +256,7 @@ def predict(data: PatientData):
         }
  
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(exc))
  

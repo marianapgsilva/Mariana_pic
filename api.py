@@ -9,6 +9,13 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
  
+ app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 # ============================================================
 # CAMINHOS
 # ============================================================
@@ -216,7 +223,7 @@ def build_initial_measurements(data: PatientData) -> list[dict[str, Any]]:
 # ============================================================
 @app.get("/")
 def home():
-    return {"message": "BariCurve API com modeloii LSTM real"}
+    return {"message": "BariCurve API com modelo LSTM real"}
  
  
 @app.get("/health")

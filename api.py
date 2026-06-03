@@ -232,8 +232,6 @@ def health():
     except Exception as e:
         return {"status": "erro", "detalhe": str(e)}
  
-print("DATA RECEBIDA:", data)
-
 @app.post("/predict")
 def predict(data: PatientData):
     try:

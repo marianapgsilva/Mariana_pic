@@ -83,7 +83,7 @@ class PatientData(BaseModel):
 def load_model_bundle():
     from tensorflow.keras.models import load_model
     modelo   = load_model("models/modelo_final.h5", compile=False)
-    model.save("modelo_final.h5")
+    modelo.save("modelo_final.h5")
     print("MODELO CARREGADO COM SUCESSO")
     scaler_x = joblib.load(CAMINHO_SCALER_X)
     scaler_y = joblib.load(CAMINHO_SCALER_Y)

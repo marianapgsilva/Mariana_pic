@@ -22,10 +22,10 @@ app.add_middleware(
 # CAMINHOS
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-CAMINHO_MODELO = os.path.join(BASE_DIR, "modelo_lstm_curva4_pesoproposta_pesomax.keras")
+CAMINHO_MODELO = os.path.join(BASE_DIR, "models", "modelo_final.h5")
 CAMINHO_SCALER_X = os.path.join(BASE_DIR, "models", "scaler_x_lstm_curva4_pesoproposta_pesomax.pkl")
 CAMINHO_SCALER_Y = os.path.join(BASE_DIR, "models", "scaler_y_lstm_curva4_pesoproposta_pesomax.pkl")
-CAMINHO_METADATA = os.path.join(BASE_DIR, "metadata_lstm_curva4_pesoproposta_pesomax.pkl")
+CAMINHO_METADATA = os.path.join(BASE_DIR, "models", "metadata_lstm_curva4_pesoproposta_pesomax.pkl")
 # ============================================================
 # CONSTANTES (têm de coincidir com o script de treino)
 # ============================================================
@@ -82,7 +82,7 @@ class PatientData(BaseModel):
 @lru_cache(maxsize=1)
 def load_model_bundle():
     from tensorflow.keras.models import load_model
-    modelo   = load_model("models/modelo_final.h5", compile=False)
+    modelo   = load_model(CAMINHO_MODELO, compile=False)
     modelo.save("modelo_final.h5")
     print("MODELO CARREGADO COM SUCESSO")
     scaler_x = joblib.load(CAMINHO_SCALER_X)

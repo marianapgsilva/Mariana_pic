@@ -3,9 +3,6 @@ venv/
 .venv/
 env/
 
-# Modelos treinados e scalers (Ficheiros pesados)
-models/*.keras
-models/*.pkl
 
 # Caches e ficheiros do sistema Apple
 __pycache__/

@@ -5,7 +5,7 @@ Este script treina um unico modelo LSTM capaz de prever o IMC em diferentes
 dias alvo. Cada medicao entra como par temporal: dia desde cirurgia + IMC.
 A versao 4 acrescenta peso maximo como variavel estatica e peso proposta
 cirurgica como medicao temporal pre-operatoria, alem do peso minimo
-pos-operatorio da versao 3.
+pos-operatorio da versao 3. Inclui agora a variavel estatica Diabetes.
 
 O treino usa medicoes disponiveis ate 84 meses, mas a interface clinica
 preve apenas ate 60 meses.
@@ -40,7 +40,7 @@ PROJETO_ROOT = os.path.join(BASE_DIR, "..")
 
 PASTA_DADOS = os.path.join(PROJETO_ROOT, "Dados")
 PASTA_MODELS = os.path.join(PROJETO_ROOT, "models")
-CAMINHO_CSV = os.path.join(PASTA_DADOS, "Base_dados_v1.csv")
+CAMINHO_CSV = os.path.join(PASTA_DADOS, "Base_dados_comparação.csv")
 
 os.makedirs(PASTA_MODELS, exist_ok=True)
 
@@ -80,6 +80,7 @@ SEQ_FEATURE_NAMES = [
     "genero_num",
     "idade",
     "dislipidemia",
+    "diabetes",
     "peso_max_kg",
     "dia_medicao",
     "imc_medicao",
@@ -170,6 +171,7 @@ def carregar_dados(caminho):
     df["idade"] = coluna_numerica(df_raw, "idade_anos")
     df["altura"] = coluna_numerica(df_raw, "altura_m")
     df["dislipidemia"] = coluna_numerica(df_raw, "dislipidemia").fillna(0).astype(int)
+    df["diabetes"] = coluna_numerica(df_raw, "diabetes").fillna(0).astype(int)
 
     df["genero_num"] = (
         df["genero"].astype(str).str.strip().str[0].str.upper().map({"F": 0, "M": 1})
@@ -300,6 +302,7 @@ def obter_variaveis_estaticas(row):
         "genero_num": row.get("genero_num"),
         "idade": row.get("idade"),
         "dislipidemia": row.get("dislipidemia"),
+        "diabetes": row.get("diabetes"),
         "peso_max_kg": row.get("peso_max_kg"),
     }
     if any(pd.isna(v) for v in valores.values()):
@@ -381,6 +384,7 @@ def construir_sequencia(static_values, historico, dia_alvo, dia_alvo_estimado=0)
             static_values["genero_num"],
             static_values["idade"],
             static_values["dislipidemia"],
+            static_values["diabetes"],
             static_values["peso_max_kg"],
             medicao["dia"],
             medicao["imc"],
@@ -639,3 +643,4 @@ if __name__ == "__main__":
     else:
         base_dados = carregar_dados(CAMINHO_CSV)
         treinar_modelo_temporal(base_dados)
+        

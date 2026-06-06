@@ -41,7 +41,7 @@ MARCOS_INTERFACE = [
 ]
  
 MAX_TIMESTEPS    = 9
-NUM_SEQ_FEATURES = 13
+NUM_SEQ_FEATURES = 14
  
 # ============================================================
 # APP
@@ -69,10 +69,15 @@ class PatientData(BaseModel):
     sexo: int
     idade: int
     dislipidemia: int
+    diabetes: int
     altura: float
     peso_inicial: float
     fumador: int | None = None
     peso_max_kg: float | None = None
+    peso_proposta_cirurgica: float | None = None
+    dia_peso_proposta: float | None = None
+    peso_minimo_pos: float | None = None
+    dia_peso_minimo: float | None = None
     pesos: list[WeightEntry] = []
  
  
@@ -111,6 +116,7 @@ def construir_sequencia(static_values: dict, historico: list, dia_alvo: float) -
             static_values["genero_num"],
             static_values["idade"],
             static_values["dislipidemia"],
+            static_values["diabetes"],
             static_values["peso_max_kg"],
             m["dia"],
             m["imc"],
@@ -200,6 +206,26 @@ def build_initial_measurements(data: PatientData) -> list[dict[str, Any]]:
         "peso_minimo": 0.0,
         "peso_proposta": 0.0,
     }]
+
+    if data.peso_proposta_cirurgica is not None and data.dia_peso_proposta is not None:
+        measurements.append({
+            "nome": "peso_proposta",
+            "dia": float(data.dia_peso_proposta),
+            "imc": calculate_bmi(data.peso_proposta_cirurgica, data.altura),
+            "dia_estimado": 0.0,
+            "peso_minimo": 0.0,
+            "peso_proposta": 1.0,
+        })
+
+    if data.peso_minimo_pos is not None and data.dia_peso_minimo is not None:
+        measurements.append({
+            "nome": "peso_minimo",
+            "dia": float(data.dia_peso_minimo),
+            "imc": calculate_bmi(data.peso_minimo_pos, data.altura),
+            "dia_estimado": 0.0,
+            "peso_minimo": 1.0,
+            "peso_proposta": 0.0,
+        })
  
     for i, entry in enumerate(data.pesos):
         day = entry_day(entry)
@@ -239,10 +265,15 @@ def predict(data: PatientData):
         modelo, scaler_x, scaler_y, _ = load_model_bundle()
  
         all_weights = [data.peso_inicial] + [e.peso for e in data.pesos]
+        if data.peso_proposta_cirurgica is not None:
+            all_weights.append(data.peso_proposta_cirurgica)
+        if data.peso_minimo_pos is not None:
+            all_weights.append(data.peso_minimo_pos)
         static_values = {
             "genero_num":   float(data.sexo),
             "idade":        float(data.idade),
             "dislipidemia": float(data.dislipidemia),
+            "diabetes":     float(data.diabetes),
             "peso_max_kg":  float(data.peso_max_kg or max(all_weights)),
         }
  
@@ -258,4 +289,3 @@ def predict(data: PatientData):
         import traceback
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(exc))
- 

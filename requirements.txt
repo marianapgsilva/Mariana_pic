@@ -4,5 +4,5 @@ numpy
 pandas
 scikit-learn
 python-multipart
-tensorflow==2.15.0
-keras==2.15.0
+tensorflow==2.19.0
+keras==3.14.1

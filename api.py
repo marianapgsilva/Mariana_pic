@@ -1,5 +1,5 @@
-import os
 print("API ATIVA A PARTIR DE:", __file__)
+import os
 from functools import lru_cache
 from typing import Any
  
@@ -9,23 +9,17 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
  
-app = FastAPI(title="BariCurve API")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 # ============================================================
 # CAMINHOS
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-CAMINHO_MODELO = os.path.join(BASE_DIR, "models", "modelo_final.h5")
-CAMINHO_SCALER_X = os.path.join(BASE_DIR, "models", "scaler_x_lstm_curva4_pesoproposta_pesomax.pkl")
-CAMINHO_SCALER_Y = os.path.join(BASE_DIR, "models", "scaler_y_lstm_curva4_pesoproposta_pesomax.pkl")
-CAMINHO_METADATA = os.path.join(BASE_DIR, "models", "metadata_lstm_curva4_pesoproposta_pesomax.pkl")
+# ============================================================
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+PASTA_MODELS = os.path.join(PROJECT_DIR, "models")
+ 
+CAMINHO_MODELO   = os.path.join(PASTA_MODELS, "modelo_lstm_curva4_pesoproposta_pesomax.keras")
+CAMINHO_SCALER_X = os.path.join(PASTA_MODELS, "scaler_x_lstm_curva4_pesoproposta_pesomax.pkl")
+CAMINHO_SCALER_Y = os.path.join(PASTA_MODELS, "scaler_y_lstm_curva4_pesoproposta_pesomax.pkl")
+CAMINHO_METADATA = os.path.join(PASTA_MODELS, "metadata_lstm_curva4_pesoproposta_pesomax.pkl")
+ 
 # ============================================================
 # CONSTANTES (têm de coincidir com o script de treino)
 # ============================================================
@@ -46,6 +40,7 @@ NUM_SEQ_FEATURES = 14
 # ============================================================
 # APP
 # ============================================================
+app = FastAPI(title="BariCurve API")
  
 app.add_middleware(
     CORSMiddleware,
@@ -88,7 +83,6 @@ class PatientData(BaseModel):
 def load_model_bundle():
     from tensorflow.keras.models import load_model
     modelo   = load_model(CAMINHO_MODELO, compile=False)
-    modelo.save("modelo_final.h5")
     print("MODELO CARREGADO COM SUCESSO")
     scaler_x = joblib.load(CAMINHO_SCALER_X)
     scaler_y = joblib.load(CAMINHO_SCALER_Y)
@@ -207,7 +201,11 @@ def build_initial_measurements(data: PatientData) -> list[dict[str, Any]]:
         "peso_proposta": 0.0,
     }]
 
-    if data.peso_proposta_cirurgica is not None and data.dia_peso_proposta is not None:
+    if (
+        data.peso_proposta_cirurgica is not None
+        and data.dia_peso_proposta is not None
+        and data.dia_peso_proposta < 0
+    ):
         measurements.append({
             "nome": "peso_proposta",
             "dia": float(data.dia_peso_proposta),
@@ -215,16 +213,6 @@ def build_initial_measurements(data: PatientData) -> list[dict[str, Any]]:
             "dia_estimado": 0.0,
             "peso_minimo": 0.0,
             "peso_proposta": 1.0,
-        })
-
-    if data.peso_minimo_pos is not None and data.dia_peso_minimo is not None:
-        measurements.append({
-            "nome": "peso_minimo",
-            "dia": float(data.dia_peso_minimo),
-            "imc": calculate_bmi(data.peso_minimo_pos, data.altura),
-            "dia_estimado": 0.0,
-            "peso_minimo": 1.0,
-            "peso_proposta": 0.0,
         })
  
     for i, entry in enumerate(data.pesos):
@@ -239,6 +227,20 @@ def build_initial_measurements(data: PatientData) -> list[dict[str, Any]]:
             "peso_minimo": 0.0,
             "peso_proposta": 0.0,
         })
+
+    if (
+        data.peso_minimo_pos is not None
+        and data.dia_peso_minimo is not None
+        and data.dia_peso_minimo > 0
+    ):
+        measurements.append({
+            "nome": "peso_min",
+            "dia": float(data.dia_peso_minimo),
+            "imc": calculate_bmi(data.peso_minimo_pos, data.altura),
+            "dia_estimado": 0.0,
+            "peso_minimo": 1.0,
+            "peso_proposta": 0.0,
+        })
  
     return sorted(measurements, key=lambda m: m["dia"])
  
@@ -248,7 +250,7 @@ def build_initial_measurements(data: PatientData) -> list[dict[str, Any]]:
 # ============================================================
 @app.get("/")
 def home():
-    return {"message": "BariCurve API com modelo LSTM real"}
+    return {"message": "BariCurve API com modeloii LSTM real"}
  
  
 @app.get("/health")
@@ -258,6 +260,7 @@ def health():
         return {"status": "ok", "modelo": "carregado", "mae_teste": metadata.get("mae_teste")}
     except Exception as e:
         return {"status": "erro", "detalhe": str(e)}
+ 
  
 @app.post("/predict")
 def predict(data: PatientData):
@@ -286,6 +289,4 @@ def predict(data: PatientData):
         }
  
     except Exception as exc:
-        import traceback
-        print(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc

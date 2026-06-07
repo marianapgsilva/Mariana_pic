@@ -80,6 +80,7 @@ SEQ_FEATURE_NAMES = [
     "genero_num",
     "idade",
     "dislipidemia",
+    "diabetes",
     "peso_max_kg",
     "dia_medicao",
     "imc_medicao",
@@ -170,6 +171,7 @@ def carregar_dados(caminho):
     df["idade"] = coluna_numerica(df_raw, "idade_anos")
     df["altura"] = coluna_numerica(df_raw, "altura_m")
     df["dislipidemia"] = coluna_numerica(df_raw, "dislipidemia").fillna(0).astype(int)
+    df["diabetes"] = coluna_numerica(df_raw, "diabetes").fillna(0).astype(int)
 
     df["genero_num"] = (
         df["genero"].astype(str).str.strip().str[0].str.upper().map({"F": 0, "M": 1})
@@ -300,6 +302,7 @@ def obter_variaveis_estaticas(row):
         "genero_num": row.get("genero_num"),
         "idade": row.get("idade"),
         "dislipidemia": row.get("dislipidemia"),
+        "diabetes": row.get("diabetes"),
         "peso_max_kg": row.get("peso_max_kg"),
     }
     if any(pd.isna(v) for v in valores.values()):
@@ -381,6 +384,7 @@ def construir_sequencia(static_values, historico, dia_alvo, dia_alvo_estimado=0)
             static_values["genero_num"],
             static_values["idade"],
             static_values["dislipidemia"],
+            static_values["diabetes"],
             static_values["peso_max_kg"],
             medicao["dia"],
             medicao["imc"],
